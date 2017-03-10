@@ -24,6 +24,8 @@ Please note that it does not write output to any, but it writes the CSV to the s
 $ ./cf-dump.js email@example.com 2d020di24n2j2kd9di2j2eh82ndwdfdssi2ei > result.csv
 ```
 
+Please also note that it prints download state and errors on standard output. You may need to redirect stdout to /dev/null.
+
 In order to get your API key
 - login to your Cloudflare account
 - in the top right corner, click on your email address
