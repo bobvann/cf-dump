@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 
 const MAX_ZONES_PER_PAGE = 50;
-const CSV_FIELD_DELIMITER = ",";
 const URL = "api.cloudflare.com";
+const CSV_FIELD_DELIMITER = ",";
 
 const args = process.argv.slice(2);
 if(args.length < 2 ){
 	process.stderr.write("Missing arguments\n\n");
-	process.stderr.write("Usage:  ./cf-dump.js <email> <api key>\n")
-	process.stderr.write("Example: ./cf-dump.js email@example.com 2d020di24n2j2kd9di2j2eh82ndwdfdssi2ei\n\n")
+	process.stderr.write("Usage:  ./cf-dump.js <email> <api key> [field delimiter]\n")
+	process.stderr.write("Example: ./cf-dump.js email@example.com 2d020di24n2j2kd9di2j2eh82ndwdfdssi2ei ;\n\n")
 	process.exit(3);
 }
-
 
 var EMAIL = args[0];
 var APIKEY = args[1];
@@ -60,9 +59,8 @@ var getZoneOptions = function(zoneId){
 	};
 }
 
-
 //extract only usefull info from zones
-function clearAllZones(sd){
+var clearAllZones = function(sd){
 	return sd.result.map(function(el){
 		return {
 			id: el.id,
@@ -71,48 +69,41 @@ function clearAllZones(sd){
 	});
 }
 
+//print zone analytics
+var completedZone = function(zone, analytics){
+	analytics.result.timeseries.forEach(function(ts){
 
-//when everything is completed
-function completedAll(zones){
-	console.log("domain,since,until,req_all,req_cache,req_nocache,bw_all,bw_cache,bw_nocache");
+		var row = "";
 
-	zones.forEach(function(z){
+		row += zone.name;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.since;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.until;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.requests.all;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.requests.cached;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.requests.uncached;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.bandwidth.all;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.bandwidth.cached;
+		row += CSV_FIELD_DELIMITER;
+		row += ts.bandwidth.uncached;
 
-		z.analytics.result.timeseries.forEach(function(ts){
-
-			var row = "";
-
-			row += z.name;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.since;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.until;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.requests.all;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.requests.cached;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.requests.uncached;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.bandwidth.all;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.bandwidth.cached;
-			row += CSV_FIELD_DELIMITER;
-			row += ts.bandwidth.uncached;
-
-			console.log(row);
-		});
+		console.log(row);
 	});
-
 }
 
-
-getAllZones = function(pageIndex, prevZones, cb){
+//get all zones (recursive on pageIndex, get all pages)
+var getAllZones = function(pageIndex, prevZones, cb){
 	process.stderr.write("Downloading zones list: page " + pageIndex + " (already downloaded " + prevZones.length +" zones)\n" );
 	httpsGet(getAllZonesOptions(pageIndex), function(o){
 		if(!o.success){
 			process.stderr.write("Error during fetching zones\n");
-			process.stderr.write( JSON.strinfigy(o.errors +'\n' ));
+			process.stderr.write( JSON.strinfigy(o.errors) +'\n' );
 			process.exit(1);
 		}
 
@@ -128,27 +119,34 @@ getAllZones = function(pageIndex, prevZones, cb){
 	});
 }
 
-getAllZones(1,[], function(zones){
-	var n=0;
-
-	zones.forEach(function(z,i){
-		process.stderr.write('Downloading statistics for zone  ' + (i+1) + '/' + zones.length +  ' - ' + z.id + ' - ' + z.name + '\n');
+//get one zone. recursive and call getZone on other zones of array
+var getZone = function(zones, index, cb){
+	var z = zones[index];
+	process.stderr.write('Downloading statistics for zone  ' + (index+1) + '/' + zones.length +  ' - ' + z.id + ' - ' + z.name + '\n');
 		httpsGet(getZoneOptions(z.id), function(o){
 
 			if(!o.success){
-				process.stderr.write("Error during fetching zone\n");
-				process.stderr.write( JSON.stringify(o.errors +'\n' ));
+				process.stderr.write("Error during fetching zone" + z.id + " - " + z.name + "\n");
+				process.stderr.write( JSON.stringify(o.errors) + '\n');
 				process.exit(2);
 			}
 
-			zones[i].analytics = o;
+			completedZone(z,o);
 
-			n++;
-			if(n==zones.length){
-				completedAll(zones);
+			if(index==zones.length-1){
+				cb();
+			}else{
+				getZone(zones,index+1,cb);
 			}
 
 		});
+}
+
+getAllZones(1,[], function(zones){
+	console.log("domain,since,until,req_all,req_cache,req_nocache,bw_all,bw_cache,bw_nocache");
+	getZone(zones,0,function(){
+		process.stderr.write('\n');
+		process.stderr.write('cf-dump completed.\n');
 	});
 });
 
